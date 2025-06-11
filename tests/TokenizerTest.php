@@ -15,7 +15,6 @@ use ReflectionClass;
 
 #[CoversClass(Tokenizer::class)]
 #[CoversClass(ClassInfo::class)]
-#[CoversClass(TokenizerInterface::class)]
 class TokenizerTest extends TestCase
 {
     private Tokenizer $tokenizer;
