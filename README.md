@@ -1,6 +1,6 @@
 # bermudaphp/tokenizer
 
-🇺🇸 English | [🇷🇺 Русский](README.md)
+🇺🇸 English | [🇷🇺 Русский](README.RU.md)
 
 PHP tokenizer for finding class, interface, trait, and enum declarations.
 
