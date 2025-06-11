@@ -145,17 +145,9 @@ foreach ($declarations as $classInfo) {
 
 ## Requirements
 
-- PHP 8.1 or higher
+- PHP 8.4 or higher
 - `tokenizer` extension (usually included in standard PHP builds)
 
 ## License
 
 MIT License. See [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-We welcome contributions! Please see our contributing guidelines for more information.
-
-## Support
-
-If you have questions or issues, please create an issue in the GitHub repository.
