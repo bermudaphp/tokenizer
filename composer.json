@@ -9,8 +9,7 @@
         "class",
         "interface",
         "trait",
-        "enum",
-        "reflection"
+        "enum"
     ],
     "license": "MIT",
     "require": {
