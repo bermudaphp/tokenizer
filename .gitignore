@@ -20,14 +20,7 @@ Thumbs.db
 
 # PHPUnit
 .phpunit.cache/
-coverage/
-phpunit.xml.dist
 .phpunit.result.cache
-
-# Code quality tools
-.phpstan.cache
-.psalm/
-build/
 
 # Logs
 *.log
@@ -36,12 +29,6 @@ build/
 .env
 .env.local
 .env.*.local
-
-# Node.js (if using any JS tools)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Temporary files
 tmp/
