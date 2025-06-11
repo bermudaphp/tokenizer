@@ -25,6 +25,10 @@ class TokenizerTest extends TestCase
         $this->tokenizer = new Tokenizer();
     }
 
+    // ========================================
+    // BASIC FUNCTIONALITY TESTS
+    // ========================================
+
     #[Test]
     #[TestDox('Tokenizer implements TokenizerInterface correctly')]
     public function tokenizerImplementsInterface(): void
@@ -667,5 +671,1001 @@ class TokenizerTest extends TestCase
         $result2 = $this->tokenizer->parse($code2);
         $this->assertCount(1, $result2);
         $this->assertSame('App\\Controllers', $result2[0]->namespace);
+    }
+
+    // ========================================
+    // INTEGRATION TESTS
+    // ========================================
+
+    #[Test]
+    #[TestDox('Full integration: complex codebase parsing')]
+    public function fullIntegrationComplexCodebase(): void
+    {
+        $complexCode = '<?php
+
+        declare(strict_types=1);
+
+        namespace MyApp\\Core\\Database;
+
+        use PDO;
+        use Exception;
+        use MyApp\\Contracts\\RepositoryInterface;
+
+        /**
+         * Complex repository with all features
+         */
+        #[Repository]
+        #[Injectable(scope: "singleton")]
+        abstract class AbstractRepository implements RepositoryInterface
+        {
+            protected PDO $connection;
+            
+            public function __construct(PDO $connection) {
+                $this->connection = $connection;
+            }
+            
+            abstract public function find(int $id): ?object;
+        }
+
+        namespace MyApp\\Repositories {
+            use MyApp\\Core\\Database\\AbstractRepository;
+            use MyApp\\Models\\User;
+            
+            final readonly class UserRepository extends AbstractRepository
+            {
+                public function find(int $id): ?User {
+                    // Implementation
+                    return null;
+                }
+                
+                public function createUser(): User {
+                    return new class extends User {
+                        public function getType(): string {
+                            return "anonymous";
+                        }
+                    };
+                }
+            }
+        }
+
+        namespace MyApp\\Contracts {
+            interface RepositoryInterface {
+                public function find(int $id): ?object;
+            }
+            
+            interface CacheableInterface {
+                public function getCacheKey(): string;
+            }
+        }
+
+        namespace MyApp\\Traits {
+            trait TimestampableTrait {
+                protected ?\\DateTimeImmutable $createdAt = null;
+                protected ?\\DateTimeImmutable $updatedAt = null;
+            }
+            
+            trait CacheableTrait {
+                public function getCacheKey(): string {
+                    return static::class . ":" . $this->getId();
+                }
+            }
+        }
+
+        namespace MyApp\\Enums {
+            enum UserStatus: string {
+                case ACTIVE = "active";
+                case INACTIVE = "inactive";
+                case PENDING = "pending";
+                case BANNED = "banned";
+            }
+            
+            enum Priority: int {
+                case LOW = 1;
+                case MEDIUM = 5;
+                case HIGH = 10;
+                case CRITICAL = 20;
+            }
+        }
+
+        namespace {
+            class GlobalUtility {
+                public static function helper(): string {
+                    return "global";
+                }
+            }
+        }
+        ';
+
+        $result = $this->tokenizer->parse($complexCode);
+
+        // Should find all declarations
+        $this->assertCount(9, $result);
+
+        // Group by namespace
+        $byNamespace = [];
+        foreach ($result as $declaration) {
+            $byNamespace[$declaration->namespace][] = $declaration;
+        }
+
+        // Check MyApp\Core\Database namespace
+        $this->assertArrayHasKey('MyApp\\Core\\Database', $byNamespace);
+        $this->assertCount(1, $byNamespace['MyApp\\Core\\Database']);
+        $this->assertSame('AbstractRepository', $byNamespace['MyApp\\Core\\Database'][0]->name);
+        $this->assertTrue($byNamespace['MyApp\\Core\\Database'][0]->isAbstract);
+
+        // Check MyApp\Repositories namespace
+        $this->assertArrayHasKey('MyApp\\Repositories', $byNamespace);
+        $this->assertCount(1, $byNamespace['MyApp\\Repositories']);
+        $this->assertSame('UserRepository', $byNamespace['MyApp\\Repositories'][0]->name);
+        $this->assertTrue($byNamespace['MyApp\\Repositories'][0]->isFinal);
+        $this->assertTrue($byNamespace['MyApp\\Repositories'][0]->isReadonly);
+
+        // Check interfaces
+        $this->assertArrayHasKey('MyApp\\Contracts', $byNamespace);
+        $this->assertCount(2, $byNamespace['MyApp\\Contracts']);
+
+        // Check traits
+        $this->assertArrayHasKey('MyApp\\Traits', $byNamespace);
+        $this->assertCount(2, $byNamespace['MyApp\\Traits']);
+
+        // Check enums
+        $this->assertArrayHasKey('MyApp\\Enums', $byNamespace);
+        $this->assertCount(2, $byNamespace['MyApp\\Enums']);
+
+        // Check global namespace
+        $this->assertArrayHasKey('', $byNamespace);
+        $this->assertCount(1, $byNamespace['']);
+        $this->assertSame('GlobalUtility', $byNamespace[''][0]->name);
+    }
+
+    #[Test]
+    #[TestDox('Integration: TokenizerInterface constants work with bitwise operations')]
+    public function tokenizerInterfaceConstantsBitwise(): void
+    {
+        $code = '<?php
+        class TestClass {}
+        interface TestInterface {}
+        trait TestTrait {}
+        enum TestEnum {}
+        ';
+
+        // Test all individual constants
+        $classes = $this->tokenizer->parse($code, TokenizerInterface::SEARCH_CLASSES);
+        $this->assertCount(1, $classes);
+        $this->assertTrue($classes[0]->isClass);
+
+        $interfaces = $this->tokenizer->parse($code, TokenizerInterface::SEARCH_INTERFACES);
+        $this->assertCount(1, $interfaces);
+        $this->assertTrue($interfaces[0]->isInterface);
+
+        $traits = $this->tokenizer->parse($code, TokenizerInterface::SEARCH_TRAITS);
+        $this->assertCount(1, $traits);
+        $this->assertTrue($traits[0]->isTrait);
+
+        $enums = $this->tokenizer->parse($code, TokenizerInterface::SEARCH_ENUMS);
+        $this->assertCount(1, $enums);
+        $this->assertTrue($enums[0]->isEnum);
+
+        // Test combinations
+        $classesAndInterfaces = $this->tokenizer->parse($code,
+            TokenizerInterface::SEARCH_CLASSES | TokenizerInterface::SEARCH_INTERFACES
+        );
+        $this->assertCount(2, $classesAndInterfaces);
+
+        $all = $this->tokenizer->parse($code, TokenizerInterface::SEARCH_ALL);
+        $this->assertCount(4, $all);
+
+        // Test exclusions
+        $allExceptEnums = $this->tokenizer->parse($code,
+            TokenizerInterface::SEARCH_ALL & ~TokenizerInterface::SEARCH_ENUMS
+        );
+        $this->assertCount(3, $allExceptEnums);
+    }
+
+    #[Test]
+    #[TestDox('Integration: ClassInfo properties with reflection')]
+    public function classInfoPropertiesWithReflection(): void
+    {
+        // Create a class that will exist for reflection
+        eval('class TestReflectionClass {}');
+
+        $classInfo = new ClassInfo('TestReflectionClass', 'class');
+
+        // Test exists
+        $this->assertTrue($classInfo->exists());
+
+        // Test reflector
+        $reflector = $classInfo->reflector;
+        $this->assertInstanceOf(\ReflectionClass::class, $reflector);
+        $this->assertSame('TestReflectionClass', $reflector->getName());
+
+        // Test virtual properties
+        $this->assertSame('TestReflectionClass', $classInfo->name);
+        $this->assertSame('', $classInfo->namespace);
+        $this->assertTrue($classInfo->isClass);
+        $this->assertTrue($classInfo->isConcrete);
+    }
+
+    #[Test]
+    #[TestDox('Integration: Real PHP file parsing simulation')]
+    public function realPhpFileParsingSimulation(): void
+    {
+        // Simulate a real PHP file with mixed content
+        $realFileContent = '<?php
+
+        // File header comment
+        declare(strict_types=1);
+
+        /**
+         * @package MyApp
+         * @author Developer
+         */
+
+        namespace MyApp\\Models;
+
+        use DateTime;
+        use JsonSerializable;
+
+        /**
+         * User model class
+         * 
+         * @entity
+         * @table("users")
+         */
+        class User implements JsonSerializable
+        {
+            private int $id;
+            private string $email;
+            private DateTime $createdAt;
+
+            public function __construct(int $id, string $email) {
+                $this->id = $id;
+                $this->email = $email;
+                $this->createdAt = new DateTime();
+            }
+
+            public function jsonSerialize(): array {
+                return [
+                    "id" => $this->id,
+                    "email" => $this->email,
+                    "created_at" => $this->createdAt->format("Y-m-d H:i:s")
+                ];
+            }
+
+            public function createProfile(): object {
+                return new class($this) {
+                    public function __construct(private User $user) {}
+                    
+                    public function getDisplayName(): string {
+                        return $this->user->email;
+                    }
+                };
+            }
+        }
+
+        // Another class in same namespace
+        abstract class BaseModel 
+        {
+            abstract public function getId(): int;
+        }
+
+        // Trait for common functionality
+        trait Timestampable 
+        {
+            protected ?DateTime $createdAt = null;
+            protected ?DateTime $updatedAt = null;
+
+            public function touch(): void {
+                $this->updatedAt = new DateTime();
+            }
+        }
+        ';
+
+        $result = $this->tokenizer->parse($realFileContent);
+
+        $this->assertCount(3, $result);
+
+        $names = array_map(fn($d) => $d->name, $result);
+        $this->assertContains('User', $names);
+        $this->assertContains('BaseModel', $names);
+        $this->assertContains('Timestampable', $names);
+
+        // All should be in MyApp\Models namespace
+        foreach ($result as $declaration) {
+            $this->assertSame('MyApp\\Models', $declaration->namespace);
+        }
+
+        // Check specific properties
+        $user = null;
+        $baseModel = null;
+        $timestampable = null;
+
+        foreach ($result as $declaration) {
+            if ($declaration->name === 'User') $user = $declaration;
+            if ($declaration->name === 'BaseModel') $baseModel = $declaration;
+            if ($declaration->name === 'Timestampable') $timestampable = $declaration;
+        }
+
+        $this->assertNotNull($user);
+        $this->assertNotNull($baseModel);
+        $this->assertNotNull($timestampable);
+
+        $this->assertTrue($user->isClass);
+        $this->assertTrue($user->isConcrete);
+        $this->assertFalse($user->isAbstract);
+
+        $this->assertTrue($baseModel->isClass);
+        $this->assertFalse($baseModel->isConcrete);
+        $this->assertTrue($baseModel->isAbstract);
+
+        $this->assertTrue($timestampable->isTrait);
+        $this->assertFalse($timestampable->isClass);
+    }
+
+    #[Test]
+    #[TestDox('Integration: Error handling across components')]
+    public function errorHandlingAcrossComponents(): void
+    {
+        // Test graceful handling of various error conditions
+        $errorCodes = [
+            '<?php namespace ; class Test {}', // Invalid namespace
+            '<?php class {}', // Missing class name
+            '<?php namespace Test class NoSemicolon {}', // Missing semicolon
+            '<?php abstract final interface Test {}', // Invalid modifiers
+        ];
+
+        foreach ($errorCodes as $code) {
+            $result = $this->tokenizer->parse($code);
+            $this->assertIsArray($result);
+            // Should not throw exceptions, may return empty or partial results
+        }
+    }
+
+    #[Test]
+    #[TestDox('Integration: Performance with realistic codebase')]
+    public function performanceWithRealisticCodebase(): void
+    {
+        // Generate realistic codebase structure
+        $code = '<?php';
+
+        $namespaces = ['App\\Models', 'App\\Controllers', 'App\\Services', 'App\\Repositories'];
+        $classTypes = ['class', 'interface', 'trait', 'enum'];
+
+        foreach ($namespaces as $namespace) {
+            $code .= "\n\nnamespace {$namespace};";
+
+            for ($i = 1; $i <= 25; $i++) { // 25 classes per namespace
+                $type = $classTypes[array_rand($classTypes)];
+                $name = ucfirst($type) . $i;
+
+                switch ($type) {
+                    case 'class':
+                        $modifiers = ['', 'abstract ', 'final ', 'readonly '];
+                        $modifier = $modifiers[array_rand($modifiers)];
+                        $code .= "\n{$modifier}class {$name} {}";
+                        break;
+                    case 'interface':
+                        $code .= "\ninterface {$name} {}";
+                        break;
+                    case 'trait':
+                        $code .= "\ntrait {$name} {}";
+                        break;
+                    case 'enum':
+                        $code .= "\nenum {$name} {}";
+                        break;
+                }
+            }
+        }
+
+        $startTime = microtime(true);
+        $result = $this->tokenizer->parse($code);
+        $endTime = microtime(true);
+
+        $this->assertCount(100, $result); // 4 namespaces × 25 classes = 100
+        $this->assertLessThan(2.0, $endTime - $startTime, 'Performance test failed');
+
+        // Verify distribution
+        $byNamespace = [];
+        foreach ($result as $declaration) {
+            $byNamespace[$declaration->namespace][] = $declaration;
+        }
+
+        foreach ($namespaces as $namespace) {
+            $this->assertArrayHasKey($namespace, $byNamespace);
+            $this->assertCount(25, $byNamespace[$namespace]);
+        }
+    }
+
+    // ========================================
+    // CRITICAL EDGE CASES TESTS
+    // ========================================
+
+    #[Test]
+    #[TestDox('Handles invalid PHP gracefully')]
+    public function handlesInvalidPhp(): void
+    {
+        // Completely broken PHP
+        $invalidCodes = [
+            'completely invalid php code ###',
+            '<?php class {', // Missing class name
+            '<?php namespace;', // Empty namespace
+            '<?php abstract interface Test {}', // Invalid combination
+            '<?php final trait Test {}', // Invalid combination
+            '<?php class class {}', // Keyword as class name won't work
+        ];
+
+        foreach ($invalidCodes as $code) {
+            $result = $this->tokenizer->parse($code);
+            $this->assertIsArray($result, "Failed for code: {$code}");
+            // Should not throw exceptions, might return empty array
+        }
+    }
+
+    #[Test]
+    #[TestDox('Handles very large PHP files')]
+    public function handlesVeryLargeFiles(): void
+    {
+        // Generate a large PHP file (10MB+)
+        $code = '<?php namespace LargeTest;' . PHP_EOL;
+
+        $classCount = 5000; // Should generate ~10MB+ file
+        for ($i = 1; $i <= $classCount; $i++) {
+            $code .= "class LargeClass{$i} { public function method{$i}() { return {$i}; } }" . PHP_EOL;
+        }
+
+        $startTime = microtime(true);
+        $result = $this->tokenizer->parse($code);
+        $endTime = microtime(true);
+
+        $this->assertCount($classCount, $result);
+        $this->assertLessThan(5.0, $endTime - $startTime, 'Parsing took too long for large file');
+
+        // Verify random samples
+        $this->assertSame('LargeClass1', $result[0]->name);
+        $this->assertSame("LargeClass{$classCount}", $result[$classCount - 1]->name);
+        $this->assertSame('LargeTest', $result[0]->namespace);
+    }
+
+    #[Test]
+    #[TestDox('Handles deeply nested namespace expressions')]
+    public function handlesDeeplyNestedNamespaces(): void
+    {
+        // Create very deep namespace
+        $deepNamespace = implode('\\', array_fill(0, 100, 'Level'));
+        $code = "<?php namespace {$deepNamespace}; class DeepClass {}";
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('DeepClass', $result[0]->name);
+        $this->assertSame($deepNamespace, $result[0]->namespace);
+        $this->assertSame($deepNamespace . '\\DeepClass', $result[0]->fullQualifiedName);
+    }
+
+    #[Test]
+    #[TestDox('Handles classes with extremely long names')]
+    public function handlesExtremelyLongNames(): void
+    {
+        $longName = str_repeat('VeryLongClassName', 100); // 17 * 100 = 1700 chars
+        $code = "<?php class {$longName} {}";
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(1, $result);
+        $this->assertSame($longName, $result[0]->name);
+        $this->assertSame(1700, strlen($result[0]->name));
+    }
+
+    #[Test]
+    #[TestDox('Handles binary and special characters in source')]
+    public function handlesBinaryAndSpecialChars(): void
+    {
+        // UTF-8 BOM + special characters
+        $code = "\xEF\xBB\xBF<?php\n// Special chars: ñáéíóú\nclass TestClass {}\n/* 中文注释 */";
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('TestClass', $result[0]->name);
+    }
+
+    #[Test]
+    #[TestDox('Handles all modifier combinations')]
+    public function handlesAllModifierCombinations(): void
+    {
+        $code = '<?php
+        abstract class AbstractOnly {}
+        final class FinalOnly {}
+        readonly class ReadonlyOnly {}
+        abstract readonly class AbstractReadonly {}
+        final readonly class FinalReadonly {}
+        ';
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(5, $result);
+
+        $byName = [];
+        foreach ($result as $declaration) {
+            $byName[$declaration->name] = $declaration;
+        }
+
+        // Abstract only
+        $this->assertTrue($byName['AbstractOnly']->isAbstract);
+        $this->assertFalse($byName['AbstractOnly']->isFinal);
+        $this->assertFalse($byName['AbstractOnly']->isReadonly);
+
+        // Final only
+        $this->assertFalse($byName['FinalOnly']->isAbstract);
+        $this->assertTrue($byName['FinalOnly']->isFinal);
+        $this->assertFalse($byName['FinalOnly']->isReadonly);
+
+        // Readonly only
+        $this->assertFalse($byName['ReadonlyOnly']->isAbstract);
+        $this->assertFalse($byName['ReadonlyOnly']->isFinal);
+        $this->assertTrue($byName['ReadonlyOnly']->isReadonly);
+
+        // Abstract + Readonly
+        $this->assertTrue($byName['AbstractReadonly']->isAbstract);
+        $this->assertFalse($byName['AbstractReadonly']->isFinal);
+        $this->assertTrue($byName['AbstractReadonly']->isReadonly);
+
+        // Final + Readonly
+        $this->assertFalse($byName['FinalReadonly']->isAbstract);
+        $this->assertTrue($byName['FinalReadonly']->isFinal);
+        $this->assertTrue($byName['FinalReadonly']->isReadonly);
+    }
+
+    #[Test]
+    #[TestDox('Handles complex PHP 8.4 features')]
+    public function handlesPhp84Features(): void
+    {
+        $code = '<?php
+        class PropertyHooksClass {
+            public string $name {
+                get => strtoupper($this->name);
+                set(string $value) => $this->name = trim($value);
+            }
+            
+            public readonly string $computed {
+                get => $this->calculateValue();
+            }
+        }
+        
+        #[Attribute]
+        class MyAttribute {
+            public function __construct(
+                public readonly string $value = "default"
+            ) {}
+        }
+        ';
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(2, $result);
+
+        $names = array_map(fn($d) => $d->name, $result);
+        $this->assertContains('PropertyHooksClass', $names);
+        $this->assertContains('MyAttribute', $names);
+    }
+
+    #[Test]
+    #[TestDox('Handles memory stress test')]
+    public function handlesMemoryStressTest(): void
+    {
+        $startMemory = memory_get_usage(true);
+
+        // Create many classes to test memory usage
+        $code = '<?php';
+        for ($i = 0; $i < 1000; $i++) {
+            $code .= "\nnamespace Stress{$i}; class StressClass{$i} {}";
+        }
+
+        $result = $this->tokenizer->parse($code);
+
+        $endMemory = memory_get_usage(true);
+        $memoryUsed = $endMemory - $startMemory;
+
+        $this->assertCount(1000, $result);
+        $this->assertLessThan(50 * 1024 * 1024, $memoryUsed, 'Memory usage too high: ' . ($memoryUsed / 1024 / 1024) . 'MB');
+    }
+
+    #[Test]
+    #[TestDox('Handles concurrent namespace switches')]
+    public function handlesConcurrentNamespaceSwitches(): void
+    {
+        $code = '<?php
+        namespace A; class A1 {}
+        namespace B; class B1 {}
+        namespace A; class A2 {}
+        namespace C; class C1 {}
+        namespace B; class B2 {}
+        namespace A; class A3 {}
+        ';
+
+        $result = $this->tokenizer->parse($code);
+
+        $this->assertCount(6, $result);
+
+        $expected = [
+            'A1' => 'A', 'A2' => 'A', 'A3' => 'A',
+            'B1' => 'B', 'B2' => 'B',
+            'C1' => 'C'
+        ];
+
+        foreach ($result as $declaration) {
+            $this->assertArrayHasKey($declaration->name, $expected);
+            $this->assertSame($expected[$declaration->name], $declaration->namespace);
+        }
+    }
+
+    #[Test]
+    #[TestDox('Handles modifier reset between declarations')]
+    public function handlesModifierResetBetweenDeclarations(): void
+    {
+        $code = '<?php
+        abstract final class BothModifiers {} // both flags should be set
+        readonly class ValidReadonly {}
+        class PlainClass {} // should not inherit modifiers from previous
+        abstract class ValidAbstract {}
+        use SomeNamespace\SomeTrait; // use statement should reset modifiers
+        final class AfterUse {}
+        ';
+
+        $result = $this->tokenizer->parse($code);
+
+        $byName = [];
+        foreach ($result as $declaration) {
+            $byName[$declaration->name] = $declaration;
+        }
+
+        // BothModifiers should have both abstract and final
+        $this->assertTrue($byName['BothModifiers']->isAbstract);
+        $this->assertTrue($byName['BothModifiers']->isFinal);
+
+        // ValidReadonly should only be readonly
+        $this->assertFalse($byName['ValidReadonly']->isAbstract);
+        $this->assertFalse($byName['ValidReadonly']->isFinal);
+        $this->assertTrue($byName['ValidReadonly']->isReadonly);
+
+        // PlainClass should have no modifiers
+        $this->assertFalse($byName['PlainClass']->isAbstract);
+        $this->assertFalse($byName['PlainClass']->isFinal);
+        $this->assertFalse($byName['PlainClass']->isReadonly);
+
+        // ValidAbstract should only be abstract
+        $this->assertTrue($byName['ValidAbstract']->isAbstract);
+        $this->assertFalse($byName['ValidAbstract']->isFinal);
+        $this->assertFalse($byName['ValidAbstract']->isReadonly);
+
+        // AfterUse should only be final (modifiers reset by use statement)
+        $this->assertFalse($byName['AfterUse']->isAbstract);
+        $this->assertTrue($byName['AfterUse']->isFinal);
+        $this->assertFalse($byName['AfterUse']->isReadonly);
+    }
+
+    // ========================================
+    // SECURITY AND STRESS TESTS
+    // ========================================
+
+    #[Test]
+    #[TestDox('Handles malicious code injection attempts')]
+    public function handlesMaliciousCodeInjection(): void
+    {
+        // Test various injection attempts
+        $maliciousCodes = [
+            '<?php eval("system(\'rm -rf /\')"); class Test {}',
+            '<?php /* <?php */ class Test {}',
+            '<?php namespace App; exec("dangerous command"); class Test {}',
+            '<?php class Test { public function __destruct() { system("evil"); } }',
+            '<?php ?><?php class Test {}<script>alert("xss")</script>',
+        ];
+
+        foreach ($maliciousCodes as $code) {
+            $result = $this->tokenizer->parse($code);
+
+            // Should parse the class structure without executing malicious code
+            $this->assertIsArray($result);
+
+            // Should find the Test class
+            $foundTest = false;
+            foreach ($result as $declaration) {
+                if ($declaration->name === 'Test') {
+                    $foundTest = true;
+                    break;
+                }
+            }
+
+            if (str_contains($code, 'class Test')) {
+                $this->assertTrue($foundTest, "Failed to parse Test class from: " . substr($code, 0, 50));
+            }
+        }
+    }
+
+    #[Test]
+    #[TestDox('Handles memory exhaustion attempts')]
+    public function handlesMemoryExhaustionAttempts(): void
+    {
+        $startMemory = memory_get_usage(true);
+
+        // Create code with many large strings to test memory handling
+        $code = '<?php namespace MemoryTest;';
+
+        // Add many classes with large doc comments
+        for ($i = 0; $i < 100; $i++) {
+            $largeComment = str_repeat('* Very long comment line that repeats many times ', 1000);
+            $code .= "\n/**\n{$largeComment}\n*/\nclass MemoryClass{$i} {}";
+        }
+
+        $result = $this->tokenizer->parse($code);
+
+        $endMemory = memory_get_usage(true);
+        $memoryIncrease = $endMemory - $startMemory;
+
+        $this->assertCount(100, $result);
+        $this->assertLessThan(100 * 1024 * 1024, $memoryIncrease, 'Memory usage too high: ' . ($memoryIncrease / 1024 / 1024) . 'MB');
+    }
+
+    #[Test]
+    #[TestDox('Handles infinite loop attempts')]
+    public function handlesInfiniteLoopAttempts(): void
+    {
+        // Code that might cause infinite loops in naive parsers
+        $trickyCodes = [
+            '<?php namespace A\\B\\C\\D\\E\\F\\G\\H\\I\\J\\K\\L\\M\\N\\O\\P\\Q\\R\\S\\T\\U\\V\\W\\X\\Y\\Z; class Test {}',
+            '<?php /* nested /* comments */ */ class Test {}',
+            '<?php "string with namespace keyword: namespace Test;" class RealClass {}',
+            '<?php class Test { public function method() { $code = "class FakeClass {}"; } }',
+        ];
+
+        foreach ($trickyCodes as $code) {
+            $startTime = microtime(true);
+
+            $result = $this->tokenizer->parse($code);
+
+            $endTime = microtime(true);
+            $duration = $endTime - $startTime;
+
+            $this->assertLessThan(1.0, $duration, "Parsing took too long for: " . substr($code, 0, 50));
+            $this->assertIsArray($result);
+        }
+    }
+
+    #[Test]
+    #[TestDox('Handles deeply nested structures without stack overflow')]
+    public function handlesDeeplyNestedStructures(): void
+    {
+        // Create deeply nested anonymous classes
+        $code = '<?php class OuterClass {';
+
+        $depth = 500; // Deep nesting
+        for ($i = 0; $i < $depth; $i++) {
+            $code .= "public function level{$i}() { return new class {";
+        }
+
+        // Close all braces
+        for ($i = 0; $i < $depth; $i++) {
+            $code .= '}; }';
+        }
+        $code .= '}';
+
+        $result = $this->tokenizer->parse($code);
+
+        // Should only find the named class, not crash
+        $this->assertCount(1, $result);
+        $this->assertSame('OuterClass', $result[0]->name);
+    }
+
+    #[Test]
+    #[TestDox('Handles unicode and encoding attacks')]
+    public function handlesUnicodeAndEncodingAttacks(): void
+    {
+        $unicodeCodes = [
+            // UTF-8 BOM + normal class
+            "\xEF\xBB\xBF<?php class BomClass {}",
+            // Unicode characters in class names (valid in PHP)
+            "<?php class Классы {}",
+            // Unicode zero-width characters
+            "<?php class Test\u{200B}Class {}",
+            // Mixed encodings
+            "<?php /* комментарий */ class EncodingTest {}",
+        ];
+
+        foreach ($unicodeCodes as $code) {
+            $result = $this->tokenizer->parse($code);
+            $this->assertIsArray($result);
+            $this->assertGreaterThanOrEqual(1, count($result));
+        }
+    }
+
+    #[Test]
+    #[TestDox('Stress test: parsing extremely large codebase')]
+    public function stressTestExtremeleLargeCodebase(): void
+    {
+        $startTime = microtime(true);
+        $startMemory = memory_get_usage(true);
+
+        // Generate massive codebase
+        $namespaceCount = 50;
+        $classesPerNamespace = 200;
+        $totalClasses = $namespaceCount * $classesPerNamespace; // 10,000 classes
+
+        $code = '<?php';
+
+        for ($ns = 1; $ns <= $namespaceCount; $ns++) {
+            $code .= "\n\nnamespace StressTest\\Level{$ns};";
+
+            for ($cls = 1; $cls <= $classesPerNamespace; $cls++) {
+                $modifiers = ['', 'abstract ', 'final ', 'readonly '];
+                $modifier = $modifiers[$cls % 4];
+
+                $code .= "\n{$modifier}class StressClass{$ns}_{$cls} {";
+                $code .= "public function method{$cls}() { return {$cls}; }";
+                $code .= '}';
+            }
+        }
+
+        $result = $this->tokenizer->parse($code);
+
+        $endTime = microtime(true);
+        $endMemory = memory_get_usage(true);
+
+        $duration = $endTime - $startTime;
+        $memoryUsed = $endMemory - $startMemory;
+
+        $this->assertCount($totalClasses, $result);
+        $this->assertLessThan(10.0, $duration, "Stress test took too long: {$duration}s");
+        $this->assertLessThan(200 * 1024 * 1024, $memoryUsed, 'Memory usage too high: ' . ($memoryUsed / 1024 / 1024) . 'MB');
+
+        // Verify structure
+        $namespaces = [];
+        foreach ($result as $declaration) {
+            $namespaces[$declaration->namespace][] = $declaration;
+        }
+
+        $this->assertCount($namespaceCount, $namespaces);
+
+        foreach ($namespaces as $namespace => $classes) {
+            $this->assertCount($classesPerNamespace, $classes);
+        }
+    }
+
+    #[Test]
+    #[TestDox('Security: Information disclosure prevention')]
+    public function securityInformationDisclosurePrevention(): void
+    {
+        // Test that errors don't leak sensitive information
+        $sensitiveCode = '<?php 
+        // Sensitive comment with password: secret123
+        class DatabaseConfig {
+            private $password = "super_secret_password";
+            private $apiKey = "sk-1234567890abcdef";
+        }
+        ';
+
+        $result = $this->tokenizer->parse($sensitiveCode);
+
+        $this->assertCount(1, $result);
+        $this->assertSame('DatabaseConfig', $result[0]->name);
+
+        // ClassInfo should not expose source code content in its properties
+        $classInfo = $result[0];
+
+        // Check all public properties for sensitive data
+        $this->assertStringNotContainsString('secret123', $classInfo->fullQualifiedName);
+        $this->assertStringNotContainsString('super_secret_password', $classInfo->fullQualifiedName);
+        $this->assertStringNotContainsString('sk-1234567890abcdef', $classInfo->fullQualifiedName);
+
+        $this->assertStringNotContainsString('secret123', $classInfo->name);
+        $this->assertStringNotContainsString('super_secret_password', $classInfo->name);
+        $this->assertStringNotContainsString('sk-1234567890abcdef', $classInfo->name);
+
+        $this->assertStringNotContainsString('secret123', $classInfo->namespace);
+        $this->assertStringNotContainsString('super_secret_password', $classInfo->namespace);
+        $this->assertStringNotContainsString('sk-1234567890abcdef', $classInfo->namespace);
+
+        $this->assertStringNotContainsString('secret123', $classInfo->type);
+        $this->assertStringNotContainsString('super_secret_password', $classInfo->type);
+        $this->assertStringNotContainsString('sk-1234567890abcdef', $classInfo->type);
+
+        // Test that ClassInfo doesn't exist (as expected for parsed-only classes)
+        $this->assertFalse($classInfo->exists());
+
+        // Test that accessing non-existent reflector throws expected exception
+        try {
+            $reflector = $classInfo->reflector;
+            $this->fail('Expected ReflectionException was not thrown');
+        } catch (\ReflectionException $e) {
+            // Expected behavior - should throw exception for non-existent class
+            $this->assertStringContainsString('Class DatabaseConfig does not exist', $e->getMessage());
+            // But exception message should not contain sensitive information
+            $this->assertStringNotContainsString('secret123', $e->getMessage());
+            $this->assertStringNotContainsString('super_secret_password', $e->getMessage());
+            $this->assertStringNotContainsString('sk-1234567890abcdef', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    #[TestDox('Concurrent parsing simulation')]
+    public function concurrentParsingSimulation(): void
+    {
+        // Simulate concurrent parsing of different code snippets
+        $codes = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $codes[] = "<?php namespace Concurrent$i; class ConcurrentClass{$i} {}";
+        }
+
+        $results = [];
+        $startTime = microtime(true);
+
+        // Simulate concurrent processing
+        foreach ($codes as $index => $code) {
+            $results[$index] = $this->tokenizer->parse($code);
+        }
+
+        $endTime = microtime(true);
+        $duration = $endTime - $startTime;
+
+        // Verify all results
+        $this->assertCount(50, $results);
+        $this->assertLessThan(2.0, $duration, "Concurrent simulation took too long: {$duration}s");
+
+        foreach ($results as $index => $result) {
+            $this->assertCount(1, $result);
+            $this->assertSame("ConcurrentClass" . ($index + 1), $result[0]->name);
+            $this->assertSame("Concurrent" . ($index + 1), $result[0]->namespace);
+        }
+    }
+
+    #[Test]
+    #[TestDox('Resource cleanup verification')]
+    public function resourceCleanupVerification(): void
+    {
+        $initialMemory = memory_get_usage(true);
+
+        // Create and destroy many tokenizer instances
+        for ($i = 0; $i < 100; $i++) {
+            $tokenizer = new Tokenizer();
+            $result = $tokenizer->parse("<?php class Cleanup$i {}");
+            $this->assertCount(1, $result);
+
+            // Force cleanup
+            unset($tokenizer, $result);
+        }
+
+        // Force garbage collection
+        gc_collect_cycles();
+
+        $finalMemory = memory_get_usage(true);
+        $memoryIncrease = $finalMemory - $initialMemory;
+
+        // Memory increase should be minimal
+        $this->assertLessThan(10 * 1024 * 1024, $memoryIncrease,
+            'Memory leak detected: ' . ($memoryIncrease / 1024 / 1024) . 'MB increase');
+    }
+
+    #[Test]
+    #[TestDox('Edge case: Maximum PHP limits')]
+    public function edgeCaseMaximumPhpLimits(): void
+    {
+        // Test near PHP limits
+        $maxNestingLevel = 100; // Conservative limit
+        $maxNameLength = 1000;  // Conservative limit
+
+        // Test maximum nesting
+        $deepNamespace = implode('\\', array_fill(0, $maxNestingLevel, 'Deep'));
+        $code = "<?php namespace $deepNamespace; class DeepClass {}";
+
+        $result = $this->tokenizer->parse($code);
+        $this->assertCount(1, $result);
+        $this->assertSame('DeepClass', $result[0]->name);
+
+        // Test maximum name length
+        $longName = str_repeat('Long', $maxNameLength / 4);
+        $code2 = "<?php class $longName {}";
+
+        $result2 = $this->tokenizer->parse($code2);
+        $this->assertCount(1, $result2);
+        $this->assertSame($longName, $result2[0]->name);
     }
 }
