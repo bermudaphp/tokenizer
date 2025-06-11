@@ -1,0 +1,46 @@
+{
+    "name": "bermudaphp/tokenizer",
+    "description": "PHP tokenizer for finding class, interface, trait, and enum declarations",
+    "type": "library",
+    "keywords": [
+        "php",
+        "tokenizer",
+        "parser",
+        "class",
+        "interface",
+        "trait",
+        "enum",
+        "reflection"
+    ],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "ext-tokenizer": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Bermuda\\Tokenizer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Bermuda\\Tokenizer\\Tests\\": "tests/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "preferred-install": "dist"
+    },
+    "scripts": {
+        "test": "phpunit",
+    },
+    "scripts-descriptions": {
+        "test": "Run PHPUnit tests"
+    }
+}
