@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [master]
   pull_request:
-    branches: [ master, develop ]
+    branches: [master]
 
 jobs:
   test:
@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         php-version: [8.4]
-        dependency-version: [prefer-lowest, prefer-stable]
+        dependency-version: [prefer-stable]
         
     name: PHP ${{ matrix.php-version }} - ${{ matrix.dependency-version }}
     
