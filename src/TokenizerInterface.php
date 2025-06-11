@@ -20,7 +20,7 @@ interface TokenizerInterface
     public const int SEARCH_INTERFACES = 2;
     public const int SEARCH_TRAITS = 4;
     public const int SEARCH_ENUMS = 8;
-    public const int SEARCH_ALL = 15; // 1 + 2 + 4 + 8
+    public const int SEARCH_ALL = 15; 
 
     /**
      * Parse PHP source code and return found class declarations
