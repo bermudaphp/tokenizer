@@ -38,7 +38,7 @@
         "preferred-install": "dist"
     },
     "scripts": {
-        "test": "phpunit",
+        "test": "phpunit"
     },
     "scripts-descriptions": {
         "test": "Run PHPUnit tests"
